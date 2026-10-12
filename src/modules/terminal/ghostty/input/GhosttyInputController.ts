@@ -7,7 +7,10 @@ import {
   type KeyEvent,
 } from "@terax/ghostty-core/protocol";
 import type { GhosttyTerminalModelApi } from "../GhosttyTerminalModel";
-import { encodeTerminalPaste } from "./terminalInputEncoding";
+import {
+  encodeTerminalPaste,
+  normalizeTerminalInput,
+} from "./terminalInputEncoding";
 
 import { TerminalNativeSelection } from "@/modules/terminal/ghostty/input/TerminalNativeSelection";
 
@@ -127,6 +130,32 @@ const KEY_MAP: Readonly<Record<string, Key>> = {
   ShiftLeft: Key.SHIFT_LEFT,
   ShiftRight: Key.SHIFT_RIGHT,
 };
+
+const NON_ASCII = /[^\x00-\x7F]/;
+
+/**
+ * `KeyboardEvent.key` is text when it is one code unit, or when it holds a
+ * non-ASCII code point. Every named key in UI Events is ASCII and at least two
+ * characters long, while text that is not a single code unit is always either
+ * decomposed (combining marks) or astral. Testing `key.length === 1` dropped
+ * both of those silently. Listing the named keys instead would send any name
+ * the list missed to the PTY as literal text.
+ */
+/**
+ * The core's key encoder writes into a fixed 256-byte buffer and fails the whole
+ * event when the text does not fit. UTF-8 costs at most three bytes per UTF-16
+ * code unit, so this bound keeps every accepted key inside it. A real keystroke
+ * is a few bytes; only a synthetic event reaches it.
+ */
+const MAX_KEY_TEXT_UNITS = 85;
+
+function isTextKey(key: string): boolean {
+  return (
+    key.length > 0 &&
+    key.length <= MAX_KEY_TEXT_UNITS &&
+    (key.length === 1 || NON_ASCII.test(key))
+  );
+}
 
 type InputSource = "keydown" | "beforeinput" | "composition" | "paste";
 
@@ -271,7 +300,7 @@ export class GhosttyInputController {
     }
 
     const printable =
-      event.key.length === 1 &&
+      isTextKey(event.key) &&
       !event.metaKey &&
       ((!event.ctrlKey && !event.altKey) ||
         (event.ctrlKey && event.altKey) ||
@@ -307,7 +336,9 @@ export class GhosttyInputController {
       action: event.repeat ? KeyAction.REPEAT : KeyAction.PRESS,
       key,
       mods: modifiers(event),
-      utf8: event.key.length === 1 ? event.key : undefined,
+      utf8: isTextKey(event.key)
+        ? normalizeTerminalInput(event.key)
+        : undefined,
       unshiftedCodepoint: unshiftedCodepoint(event),
     };
     const encoded = this.options.model.encodeKey(data);
@@ -548,25 +579,26 @@ export class GhosttyInputController {
     keyEvent?: KeyboardEvent,
   ): void {
     if (this.disposed) return;
+    const payload = normalizeTerminalInput(data);
     const now = performance.now();
     if (
       deduplicate &&
       source !== this.lastSource &&
-      data === this.lastData &&
+      payload === this.lastData &&
       now - this.lastDataAt < DUPLICATE_INPUT_WINDOW_MS
     ) {
       this.lastData = "";
       this.lastSource = null;
       return;
     }
-    this.lastData = data;
+    this.lastData = payload;
     this.lastSource = source;
     this.lastDataAt = now;
-    if (editableText && this.options.onText?.(data)) return;
+    if (editableText && this.options.onText?.(payload)) return;
     if (scrollToBottom) this.options.model.scrollToBottom();
     const bytes = keyEvent
       ? this.encodeKeyDown(keyEvent, KEY_MAP[keyEvent.code])
-      : this.encoder.encode(data);
+      : this.encoder.encode(payload);
     if (bytes.byteLength > 0) this.options.onData(bytes);
   }
 }
@@ -587,8 +619,21 @@ const UNSHIFTED_SYMBOLS: Readonly<Record<string, string>> = {
 };
 
 function unshiftedCodepoint(event: KeyboardEvent): number {
-  const character = event.key.toLowerCase().codePointAt(0) ?? 0;
-  if (event.key.length === 1 && character >= 32 && character !== 127) {
+  // Composed the same way as the utf8 sent alongside it, so a decomposed and a
+  // composed form of one character cannot report different base keys.
+  const key = isTextKey(event.key)
+    ? normalizeTerminalInput(event.key)
+    : event.key;
+  const character = key.toLowerCase().codePointAt(0) ?? 0;
+  // Astral text carries no base key of its own, so it falls through to the
+  // code-derived codepoint below instead of reporting the character itself.
+  const hasBaseKey = key.length === 1 || character < 128;
+  if (
+    hasBaseKey &&
+    isTextKey(event.key) &&
+    character >= 32 &&
+    character !== 127
+  ) {
     if (event.shiftKey) {
       const pair = UNSHIFTED_SYMBOLS[event.code];
       if (pair?.[1] === event.key) return pair.charCodeAt(0);

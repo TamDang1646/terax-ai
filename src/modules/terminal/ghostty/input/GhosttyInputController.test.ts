@@ -511,3 +511,315 @@ function mouseEvent(type: string, values: Partial<MouseEvent>): MouseEvent {
     ...values,
   }) as MouseEvent;
 }
+
+describe("GhosttyInputController Unicode text", () => {
+  const artifactPath = (artifact: string) =>
+    new URL(
+      `../../../../../packages/ghostty-core/adapted/${artifact}`,
+      import.meta.url,
+    );
+
+  async function controllerOnRealCore(artifact: string) {
+    const bytes = await readFile(artifactPath(artifact));
+    const core = await TeraxGhostty.loadBytes(Uint8Array.from(bytes).buffer);
+    const terminal = core.createTerminal(80, 24);
+    const input = new FakeTextArea();
+    const onData = vi.fn();
+    const controller = new GhosttyInputController({
+      model: {
+        ...inputModel(),
+        encodeKey: (event) => terminal.encodeKey(event),
+      },
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData,
+    });
+    return {
+      input,
+      onData,
+      terminal,
+      controller,
+      dispose: () => {
+        controller.dispose();
+        terminal.dispose();
+      },
+    };
+  }
+
+  // A key event whose `key` is text must reach the PTY whatever its length:
+  // macOS delivers accented input decomposed (NFD), and astral characters are
+  // two UTF-16 code units. Both used to be dropped because the text path only
+  // accepted `key.length === 1`.
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "delivers NFC, NFD and astral keydown text (%s)",
+    async (artifact) => {
+      const { input, onData, dispose } = await controllerOnRealCore(artifact);
+      try {
+        const cases = [
+          { label: "NFC U+1EBF", key: "ế", code: "KeyE", want: "ế" },
+          {
+            label: "NFD U+1EBF",
+            key: "ế",
+            code: "KeyE",
+            want: "ế",
+          },
+          { label: "NFD U+00E9", key: "é", code: "KeyE", want: "é" },
+          {
+            label: "astral U+1F600",
+            key: "\u{1F600}",
+            code: "KeyA",
+            want: "\u{1F600}",
+          },
+          { label: "CJK U+6F22", key: "漢", code: "KeyA", want: "漢" },
+          { label: "kana U+3042", key: "あ", code: "KeyA", want: "あ" },
+        ];
+        for (const testCase of cases) {
+          onData.mockClear();
+          input.dispatchEvent(
+            keyboardEvent({ key: testCase.key, code: testCase.code }),
+          );
+          expect(onData, testCase.label).toHaveBeenCalledOnce();
+          expect(
+            new TextDecoder().decode(onData.mock.calls[0][0]),
+            testCase.label,
+          ).toBe(testCase.want);
+        }
+      } finally {
+        dispose();
+      }
+    },
+  );
+
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "keeps named keys on the key encoder instead of the text path (%s)",
+    async (artifact) => {
+      const { input, onData, dispose } = await controllerOnRealCore(artifact);
+      try {
+        const named = [
+          { key: "ArrowUp", code: "ArrowUp", want: "\x1b[A" },
+          { key: "ArrowLeft", code: "ArrowLeft", want: "\x1b[D" },
+          { key: "Escape", code: "Escape", want: "\x1b" },
+          { key: "Home", code: "Home", want: "\x1b[H" },
+          { key: "F1", code: "F1", want: "\x1bOP" },
+        ];
+        for (const testCase of named) {
+          onData.mockClear();
+          input.dispatchEvent(
+            keyboardEvent({ key: testCase.key, code: testCase.code }),
+          );
+          expect(onData, testCase.key).toHaveBeenCalledOnce();
+          expect(
+            new TextDecoder().decode(onData.mock.calls[0][0]),
+            testCase.key,
+          ).toBe(testCase.want);
+        }
+      } finally {
+        dispose();
+      }
+    },
+  );
+
+  it("keeps control keys off the text path", async () => {
+    const { input, onData, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      onData.mockClear();
+      input.dispatchEvent(
+        keyboardEvent({ key: "c", code: "KeyC", ctrlKey: true }),
+      );
+      expect(onData.mock.calls[0][0]).toEqual(new Uint8Array([3]));
+
+      onData.mockClear();
+      input.dispatchEvent(keyboardEvent({ key: "Enter", code: "Enter" }));
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe("\r");
+
+      onData.mockClear();
+      input.dispatchEvent(
+        keyboardEvent({ key: "Backspace", code: "Backspace" }),
+      );
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe("\x7f");
+    } finally {
+      dispose();
+    }
+  });
+
+  it("still emits macOS Option-produced Unicode as text", async () => {
+    const { input, onData, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      onData.mockClear();
+      input.dispatchEvent(
+        keyboardEvent({ key: "å", code: "KeyA", altKey: true }),
+      );
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe("å");
+    } finally {
+      dispose();
+    }
+  });
+
+  // A named key the encoder map does not know must stay a key. Treating it as
+  // text types its name into the user's shell ("HangulMode" at the prompt).
+  it("never types a named key into the terminal", async () => {
+    const { input, onData, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      const names = [
+        "HangulMode",
+        "HanjaMode",
+        "KanaMode",
+        "KanjiMode",
+        "Eisu",
+        "Hiragana",
+        "Katakana",
+        "Convert",
+        "NonConvert",
+        "Compose",
+        "Symbol",
+        "SymbolLock",
+        "Fn",
+        "FnLock",
+        "Hyper",
+        "Super",
+        "AudioVolumeUp",
+        "AudioVolumeDown",
+        "AudioVolumeMute",
+        "BrightnessUp",
+        "BrightnessDown",
+        "MediaPlayPause",
+        "MediaStop",
+        "MediaNextTrack",
+        "BrowserBack",
+        "BrowserForward",
+        "BrowserRefresh",
+        "LaunchMail",
+        "Copy",
+        "Cut",
+        "Undo",
+        "Redo",
+        "Find",
+        "Cancel",
+        "Again",
+        "Props",
+        "Accept",
+        "Attn",
+        "CrSel",
+        "ExSel",
+        "EraseEof",
+        "ZoomIn",
+        "ZoomOut",
+        "Power",
+        "Standby",
+        "WakeUp",
+        "Eject",
+        "Soft1",
+        "Soft8",
+        "Unidentified",
+        "Dead",
+        "Process",
+      ];
+      for (const name of names) {
+        onData.mockClear();
+        input.dispatchEvent(keyboardEvent({ key: name, code: name }));
+        expect(onData, name).not.toHaveBeenCalled();
+      }
+    } finally {
+      dispose();
+    }
+  });
+
+  it("keeps Space as text and ignores an empty key", async () => {
+    const { input, onData, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      onData.mockClear();
+      input.dispatchEvent(keyboardEvent({ key: " ", code: "Space" }));
+      expect(onData).toHaveBeenCalledOnce();
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe(" ");
+
+      onData.mockClear();
+      input.dispatchEvent(keyboardEvent({ key: "", code: "" }));
+      expect(onData).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+
+  it.each(["ghostty-vt.wasm", "ghostty-vt-scalar.wasm"])(
+    "keeps non-US layout characters intact (%s)",
+    async (artifact) => {
+      const { input, onData, dispose } = await controllerOnRealCore(artifact);
+      try {
+        const cases = [
+          { key: "@", code: "KeyQ" },
+          { key: "z", code: "KeyY" },
+          { key: "&", code: "Digit1" },
+          { key: "a", code: "KeyQ" },
+          { key: "ä", code: "Quote" },
+          { key: "ß", code: "Minus" },
+        ];
+        for (const testCase of cases) {
+          onData.mockClear();
+          input.dispatchEvent(
+            keyboardEvent({ key: testCase.key, code: testCase.code }),
+          );
+          expect(
+            onData,
+            `${testCase.code}->${testCase.key}`,
+          ).toHaveBeenCalledOnce();
+          expect(
+            new TextDecoder().decode(onData.mock.calls[0][0]),
+            `${testCase.code}->${testCase.key}`,
+          ).toBe(testCase.key);
+        }
+      } finally {
+        dispose();
+      }
+    },
+  );
+
+  it("delivers Unicode text under the Kitty keyboard protocol", async () => {
+    const { input, onData, terminal, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      terminal.write(new TextEncoder().encode("\x1b[>1u"));
+      const cases = [
+        { key: "ế", want: "ế" },
+        { key: "ế", want: "ế" },
+        { key: "\u{1F600}", want: "\u{1F600}" },
+        { key: "漢", want: "漢" },
+      ];
+      for (const testCase of cases) {
+        onData.mockClear();
+        input.dispatchEvent(keyboardEvent({ key: testCase.key, code: "KeyA" }));
+        expect(onData, testCase.key).toHaveBeenCalledOnce();
+        expect(
+          new TextDecoder().decode(onData.mock.calls[0][0]),
+          testCase.key,
+        ).toBe(testCase.want);
+      }
+    } finally {
+      dispose();
+    }
+  });
+
+  it("normalizes decomposed text to NFC on the way out", async () => {
+    const { input, onData, controller, dispose } =
+      await controllerOnRealCore("ghostty-vt.wasm");
+    try {
+      onData.mockClear();
+      controller.paste("ế");
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe("ế");
+
+      onData.mockClear();
+      input.dispatchEvent(
+        Object.assign(new Event("compositionend"), { data: "é" }),
+      );
+      expect(new TextDecoder().decode(onData.mock.calls[0][0])).toBe("é");
+    } finally {
+      dispose();
+    }
+  });
+});

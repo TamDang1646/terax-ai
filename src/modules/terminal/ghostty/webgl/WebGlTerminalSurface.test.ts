@@ -101,11 +101,44 @@ function renderer() {
   };
 }
 
+// The surface keeps its options as a copy, so anything the preedit reads from
+// there freezes at construction. Reading the live theme instead is what keeps
+// the composition legible after the user switches themes.
+it("paints the input method composition with the theme in force", () => {
+  const view = harness();
+  view.surface.setTheme({ ...THEME, foreground: [10, 20, 30] });
+  view.surface.setPreeditActive(true);
+
+  const style = view.inputStyle();
+  expect(style).not.toBeNull();
+  expect(style?.get("color")).toBe("rgb(10 20 30)");
+  expect(style?.get("opacity")).toBe("1");
+  expect(style?.get("font-family")).toBe("monospace");
+  expect(style?.get("left")).toBe("0px");
+
+  view.surface.setPreeditActive(false);
+  // Explicitly zero rather than removed: the browser default for opacity is 1,
+  // which would park a visible textarea over the terminal.
+  expect(style?.get("opacity")).toBe("0");
+  expect(style?.has("color")).toBe(false);
+});
+
 function harness() {
   vi.useFakeTimers();
-  const element = () =>
-    Object.assign(new EventTarget(), {
-      style: { setProperty: vi.fn() },
+  let inputStyle: Map<string, string> | null = null;
+  const element = (tag?: string) => {
+    const style = new Map<string, string>();
+    if (tag === "textarea") inputStyle = style;
+    return Object.assign(new EventTarget(), {
+      style: {
+        setProperty: (property: string, value: string) => {
+          style.set(property, value);
+        },
+        getPropertyValue: (property: string) => style.get(property) ?? "",
+        removeProperty: (property: string) => {
+          style.delete(property);
+        },
+      },
       scrollTop: 0,
       setAttribute: vi.fn(),
       getAttribute: vi.fn(),
@@ -114,6 +147,7 @@ function harness() {
       remove: vi.fn(),
       getBoundingClientRect: () => ({ width: 960, height: 640 }),
     });
+  };
   const media = new EventTarget();
   vi.stubGlobal("document", { createElement: element });
   vi.stubGlobal("window", {
@@ -184,6 +218,7 @@ function harness() {
     renderer: current,
     acquire,
     onError,
+    inputStyle: () => inputStyle,
     resize: () => resize(),
     trigger(trigger: "theme" | "font" | "resume" | "dpr") {
       if (trigger === "theme")

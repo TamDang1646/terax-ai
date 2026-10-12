@@ -1,4 +1,5 @@
 import { terminalWindowFocused } from "@/modules/terminal/ghostty/renderScheduling";
+import { TerminalPreeditInput } from "@/modules/terminal/ghostty/input/TerminalPreeditInput";
 import { bindTerminalInteraction } from "@/modules/terminal/ghostty/input/terminalInteraction";
 import { TerminalScrollbarSync } from "@/modules/terminal/ghostty/gpu/terminalScrollbar";
 import { terminalWindowPresentation } from "@/modules/terminal/ghostty/windowPresentation";
@@ -101,6 +102,7 @@ export class WebGpuTerminalSurface
   private readonly canvas = document.createElement("canvas");
   private readonly backingStore = new CanvasBackingStore(this.canvas);
   private readonly input = document.createElement("textarea");
+  private readonly preedit: TerminalPreeditInput;
   private readonly root = document.createElement("div");
   private readonly scrollbar = document.createElement("div");
   private readonly scrollbarContent = document.createElement("div");
@@ -205,6 +207,16 @@ export class WebGpuTerminalSurface
     this.scrollbarContent.style.cssText = "width:1px;height:1px;";
     this.scrollbar.append(this.scrollbarContent);
     this.root.append(this.canvas, this.input, this.scrollbar);
+    this.preedit = new TerminalPreeditInput({
+      input: this.input,
+      metrics: () => this.metrics,
+      cursor: () => this.options.model.cursor(),
+      // this.theme, not options.theme: setTheme replaces the former and the
+      // options object is a copy taken when the surface was built.
+      foreground: () => this.theme.foreground,
+      cellSize: () => this.cellSize(),
+      cols: () => this.options.model.cols,
+    });
 
     this.unsubscribeInteraction = bindTerminalInteraction(
       this.root,
@@ -410,6 +422,11 @@ export class WebGpuTerminalSurface
     return this.input;
   }
 
+  setPreeditActive(active: boolean): void {
+    if (active) this.preedit.show();
+    else this.preedit.hide();
+  }
+
   eventTarget(): HTMLElement {
     return this.root;
   }
@@ -590,6 +607,7 @@ export class WebGpuTerminalSurface
     if (this.disposed) return;
     this.detach();
     this.disposed = true;
+    this.preedit.hide();
     this.unsubscribeDamage();
     this.unsubscribeResizeInteraction();
     this.search.dispose();

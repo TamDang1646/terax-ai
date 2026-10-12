@@ -212,6 +212,33 @@ const METRICS = {
   baseline: 12,
 };
 
+// WebGPU is the backend the session tries first, so its copy of this binding
+// needs its own guard: reading the live theme instead of the options copy is
+// what keeps the composition legible after the user switches themes.
+it("paints the input method composition with the theme in force", async () => {
+  const view = await harness();
+  view.surface.setTheme({
+    background: [0, 0, 0],
+    foreground: [10, 20, 30],
+    cursor: [255, 255, 255],
+    selection: { color: [50, 50, 50], alpha: 0.5 },
+    palette: [],
+  });
+  view.surface.setPreeditActive(true);
+
+  const style = view.inputStyle();
+  expect(style).not.toBeNull();
+  expect(style?.get("color")).toBe("rgb(10 20 30)");
+  expect(style?.get("opacity")).toBe("1");
+  expect(style?.get("font-family")).toBe("monospace");
+
+  view.surface.setPreeditActive(false);
+  // Explicitly zero rather than removed: the browser default for opacity is 1,
+  // which would park a visible textarea over the terminal.
+  expect(style?.get("opacity")).toBe("0");
+  expect(style?.has("color")).toBe(false);
+});
+
 async function harness() {
   bridge.visible = true;
   const destroy = vi.fn();
@@ -219,11 +246,24 @@ async function harness() {
   const context = { configure: vi.fn(), unconfigure: vi.fn() };
   const domWork = vi.fn();
   const elements: ReturnType<typeof createElement>[] = [];
-  function createElement() {
+  let inputStyle: Map<string, string> | null = null;
+  function createElement(tag?: string) {
     const attributes = new Map<string, string>();
+    const styleValues = new Map<string, string>();
+    if (tag === "textarea") inputStyle = styleValues;
     const value = Object.assign(new EventTarget(), {
       style: new Proxy(
-        { setProperty: domWork },
+        {
+          setProperty: (property: string, styleValue: string) => {
+            domWork();
+            styleValues.set(property, styleValue);
+          },
+          getPropertyValue: (property: string) =>
+            styleValues.get(property) ?? "",
+          removeProperty: (property: string) => {
+            styleValues.delete(property);
+          },
+        },
         {
           set(target, property, value) {
             domWork();
@@ -251,8 +291,8 @@ async function harness() {
     });
     return value;
   }
-  const element = () => {
-    const value = createElement();
+  const element = (tag?: string) => {
+    const value = createElement(tag);
     elements.push(value);
     return value;
   };
@@ -371,6 +411,7 @@ async function harness() {
   return {
     surface,
     cursor,
+    inputStyle: () => inputStyle,
     writeBuffer,
     draw: pass.draw,
     render: () =>

@@ -80,6 +80,8 @@ export interface TerminalSurface {
   focus(): void;
   setFocused(focused: boolean): void;
   setVisible(visible: boolean): void;
+  /** Reveals the input method's composition at the cursor while it is open. */
+  setPreeditActive(active: boolean): void;
   getSelection(): string | null;
   dispose(): void;
 }

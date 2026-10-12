@@ -170,6 +170,8 @@ export type GhosttyInputControllerOptions = {
   readonly onPaste?: (text: string) => boolean;
   readonly onText?: (text: string) => boolean;
   readonly onKeyDown?: (event: KeyboardEvent) => boolean;
+  /** Notifies the surface that an input method composition opened or closed. */
+  readonly onPreeditChange?: (active: boolean) => void;
   readonly macOptionIsMeta?: boolean;
   readonly isMac?: boolean;
 };
@@ -232,6 +234,7 @@ export class GhosttyInputController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.options.onPreeditChange?.(false);
     this.nativeSelection?.dispose();
     this.pressedKeys.clear();
     const { input, pointerTarget } = this.options;
@@ -403,10 +406,12 @@ export class GhosttyInputController {
 
   private readonly handleCompositionStart = (): void => {
     this.composing = true;
+    this.options.onPreeditChange?.(true);
   };
 
   private readonly handleCompositionEnd = (event: CompositionEvent): void => {
     this.composing = false;
+    this.options.onPreeditChange?.(false);
     if (event.data) this.emitText(event.data, "composition", true, true, true);
     this.options.input.value = "";
   };
@@ -427,6 +432,7 @@ export class GhosttyInputController {
   private readonly handleBlur = (): void => {
     this.pressedKeys.clear();
     this.composing = false;
+    this.options.onPreeditChange?.(false);
     if (this.options.model.modes().focusReporting) {
       this.emitText("\x1b[O", "keydown", false, false);
     }

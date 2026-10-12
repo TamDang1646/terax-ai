@@ -865,6 +865,7 @@ function createGhosttyInput(
     },
     onText: insertPromptText,
     onPaste: insertPromptText,
+    onPreeditChange: (active) => surface.setPreeditActive(active),
     getSelection: () => surface.getSelection(),
     onCopy: () => {
       const text = surface.getSelection();

@@ -329,6 +329,38 @@ describe("GhosttyInputController", () => {
     controller.dispose();
   });
 
+  it("reports the preedit opening and closing, and closes it on blur and dispose", () => {
+    const input = new FakeTextArea();
+    const onPreeditChange = vi.fn();
+    const controller = new GhosttyInputController({
+      model: inputModel(),
+      input: input as unknown as HTMLTextAreaElement,
+      pointerTarget: new FakeElement() as unknown as HTMLElement,
+      cellSize: () => ({ width: 10, height: 20 }),
+      isMac: true,
+      onCopy: () => false,
+      onData: vi.fn(),
+      onPreeditChange,
+    });
+
+    input.dispatchEvent(new Event("compositionstart"));
+    expect(onPreeditChange).toHaveBeenLastCalledWith(true);
+    input.dispatchEvent(
+      Object.assign(new Event("compositionend"), { data: "ế" }),
+    );
+    expect(onPreeditChange).toHaveBeenLastCalledWith(false);
+
+    onPreeditChange.mockClear();
+    input.dispatchEvent(new Event("compositionstart"));
+    input.dispatchEvent(new Event("blur"));
+    expect(onPreeditChange).toHaveBeenLastCalledWith(false);
+
+    onPreeditChange.mockClear();
+    input.dispatchEvent(new Event("compositionstart"));
+    controller.dispose();
+    expect(onPreeditChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("encodes AltGr characters and keeps a duplicate beforeinput from typing twice", () => {
     const input = new FakeTextArea();
     const onData = vi.fn();

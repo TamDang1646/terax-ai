@@ -1,0 +1,95 @@
+{
+  "$comment": "Vorta config cho dự án. /vorta-init sinh file này. Sửa tay được.",
+  "project": {
+    "name": "terax-ai",
+    "root": "/Users/vorta/Works/Vorta_project/terax-ai",
+    "kind": "development",
+    "$kind_options": "production | development | experiment"
+  },
+  "stack": {
+    "languages": ["TypeScript", "Rust"],
+    "frameworks": ["React 19", "Vite 8", "Tauri 2", "Vitest", "Zustand", "Tailwind 4", "CodeMirror 6"],
+    "src_dirs": ["src", "src-tauri/src", "src-tauri/crates", "packages"],
+    "docs_dir": "docs"
+  },
+  "commands": {
+    "test": "pnpm test",
+    "build": "pnpm build",
+    "lint": "pnpm lint",
+    "typecheck": "pnpm check-types",
+    "run": "pnpm tauri dev"
+  },
+  "$commands_note": "build:cli = node scripts/build-cli.mjs --release (build sidecar CLI). Rust: cd src-tauri && cargo check",
+  "git": {
+    "enabled": true,
+    "default_branch": "main",
+    "commit_lang": "vi",
+    "allow_push": false
+  },
+  "gates": {
+    "level": "normal",
+    "$level_options": "strict = duyệt G0-G8 | normal = bỏ G0,G1 với việc bé | loose = chỉ G4,G6,G8",
+    "always_on": ["G4", "G6", "G8"]
+  },
+  "triage": {
+    "self_do_max_files": 3,
+    "verify_loop_max": 3,
+    "plan_task_max_files": 3
+  },
+  "models": {
+    "$comment": "KHÔNG ghi id model vào đây. Agent dùng alias, alias giải qua ANTHROPIC_DEFAULT_*_MODEL lúc chạy. Bảng ánh xạ đổi lúc nào cũng được — /vorta-doctor để xem cái đang có hiệu lực.",
+    "via_gateway": true,
+    "$via_gateway": "true nếu có ANTHROPIC_BASE_URL hoặc ANTHROPIC_DEFAULT_*_MODEL. true thì settings.json KHÔNG được có khoá model.",
+    "tiers": {
+      "fable": ["architect", "security-reviewer", "ambiguity-resolver"],
+      "opus": ["po-analyst", "planner", "code-reviewer", "qa-engineer"],
+      "sonnet": ["dev-backend", "dev-frontend", "devops"],
+      "haiku": ["doc-writer", "explorer"]
+    }
+  },
+  "review": {
+    "security_required_paths": [
+      "src/modules/ai",
+      "src/modules/agents",
+      "src/modules/control",
+      "src/modules/lsp",
+      "src/modules/terminal",
+      "src/modules/updater",
+      "src/lib/shellQuote.ts",
+      "src-tauri/src",
+      "src-tauri/crates"
+    ],
+    "$comment_security": "Đường dẫn chạm auth/input/network/DB — luôn gọi security-reviewer dù diff bé"
+  },
+  "tuning": {
+    "$comment": "Vòng tự học. /vorta-retro ghi số, /vorta-tune đề xuất, user duyệt. Engine KHÔNG tự sửa mình.",
+    "min_tickets_for_signal": 5,
+    "evidence_ratio": { "siet": 0.3, "trung_tinh": 0.3, "noi": 0.5 },
+    "$evidence_ratio": "Tỉ lệ ticket phải có tín hiệu mới được đề xuất. NỚI (giảm kiểm soát) đắt hơn SIẾT.",
+    "thresholds": {
+      "escape_hatch_max": 2,
+      "verify_rounds_warn": 3,
+      "blocked_avg_warn": 3,
+      "perm_prompt_promote": 5,
+      "perm_deny_after_reject": 2
+    },
+    "probation": [],
+    "$probation": "Thay đổi vừa áp dụng, đang chờ đo lại. { change, from_ticket, check_after, metric }",
+    "never_touch": [
+      "G4", "G6", "G8",
+      "hard_rules",
+      "no_self_review",
+      "stop_on_ambiguity",
+      "decisions_append_only",
+      "deny_secret_files"
+    ],
+    "$never_touch": "/vorta-tune không được đề xuất nới các mục này, bất kể số liệu."
+  },
+  "engine_version": "0.5.0",
+  "$engine_version": "Bản plugin lúc /vorta-init hoặc /vorta-upgrade gần nhất. Lệch với plugin.json thì cần di trú.",
+  "paths": {
+    "$comment": "Mọi thứ Vorta sinh ra nằm trong .claude/ — không rải file ra gốc repo.",
+    "work": ".claude/work",
+    "knowledge": ".claude/knowledge"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "enabledPlugins": {
+    "vorta@vorta-team": true
+  },
+  "useWorktrees": false,
+  "worktreeIsolation": false,
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read(./**)",
+      "Grep(./**)",
+      "Glob(./**)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(ls:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker compose config:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm run lint:*)",
+      "Bash(pnpm run check-types:*)",
+      "Bash(npx tsc --noEmit:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)"
+    ],
+    "ask": [
+      
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fdx:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/id_rsa)",
+      "Read(./**/id_ed25519)",
+      "Read(./**/credentials.json)",
+      "Read(./**/service-account*.json)",
+      "Bash(* --force:*)",
+      "Bash(docker system prune:*)"
+    ]
+  }
+}
